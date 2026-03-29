@@ -22,8 +22,9 @@ redis:
   db: 0
   timeout: 5000  # 超时时间(ms)
 
-kafka:
-  brokers:
-    - "127.0.0.1:9092"
+rocketmq:
+  name_servers:
+    - "127.0.0.1:9876"
   topic: "voucher-order-topic"
-  group_id: "voucher-order-group"
+  producer_group: "voucher-order-producer-group"
+  consumer_group: "voucher-order-consumer-group"

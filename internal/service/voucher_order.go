@@ -3,12 +3,11 @@ package service
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
-
-	"encoding/json"
 
 	"github.com/amemiya02/hmdp-go/config"
 	"github.com/amemiya02/hmdp-go/internal/constant"
@@ -17,8 +16,9 @@ import (
 	"github.com/amemiya02/hmdp-go/internal/model/entity"
 	"github.com/amemiya02/hmdp-go/internal/repository"
 	"github.com/amemiya02/hmdp-go/internal/util"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
 	"github.com/redis/go-redis/v9"
-	"github.com/segmentio/kafka-go"
 	"gorm.io/gorm"
 )
 
@@ -46,23 +46,19 @@ var orderTasks = make(chan *entity.VoucherOrder, 1024*1024)
 
 var voucherOrderConsumerCancel context.CancelFunc
 var stopVoucherOrderConsumerOnce sync.Once
+var startVoucherOrderConsumerOnce sync.Once
+var startVoucherOrderTaskOnce sync.Once
 
-// 利用 Go 的 init() 函数，在程序一启动时就开启后台消费协程
-// 相当于 Java 里的 @PostConstruct 加上 new Thread().start()
-func init() {
-	consumerCtx, cancel := context.WithCancel(context.Background())
-	voucherOrderConsumerCancel = cancel
-	// 开启一个后台协程，专门负责从队列里取订单并写数据库
-	// go handleVoucherOrderTask()
-	// 启动消费者订阅 MQ 消息
-	go StartVoucherOrderConsumer(consumerCtx)
-}
-
-// StopVoucherOrderConsumer 停止 Kafka 订单消费者，用于应用优雅关闭。
+// StopVoucherOrderConsumer 停止 RocketMQ 订单消费者，用于应用优雅关闭。
 func StopVoucherOrderConsumer() {
 	stopVoucherOrderConsumerOnce.Do(func() {
 		if voucherOrderConsumerCancel != nil {
 			voucherOrderConsumerCancel()
+		}
+		if global.RocketMQConsumer != nil {
+			if err := global.RocketMQConsumer.Unsubscribe(config.GlobalConfig.RocketMQ.Topic); err != nil {
+				global.Logger.Error("RocketMQ 取消订阅失败: " + err.Error())
+			}
 		}
 	})
 }
@@ -78,53 +74,61 @@ func handleVoucherOrderTask() {
 	}
 }
 
-// StartVoucherOrderConsumer 启动 kafka 消费者。
+// StartVoucherOrderConsumer 启动 RocketMQ 消费者。
 func StartVoucherOrderConsumer(ctx context.Context) {
-	service := NewVoucherOrderService()
+	startVoucherOrderConsumerOnce.Do(func() {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		consumerCtx, cancel := context.WithCancel(ctx)
+		voucherOrderConsumerCancel = cancel
 
-	// 初始化 Kafka Reader (消费者)
-	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: config.GlobalConfig.Kafka.Brokers,
-		GroupID: config.GlobalConfig.Kafka.GroupID,
-		Topic:   config.GlobalConfig.Kafka.Topic,
+		startVoucherOrderTaskOnce.Do(func() {
+			go handleVoucherOrderTask()
+		})
+
+		if global.RocketMQConsumer == nil {
+			global.Logger.Warn("RocketMQ 消费者未初始化，跳过订单订阅")
+			return
+		}
+
+		if err := global.RocketMQConsumer.Start(); err != nil {
+			global.Logger.Error("RocketMQ 消费者启动失败: " + err.Error())
+			return
+		}
+
+		if err := global.RocketMQConsumer.Subscribe(
+			config.GlobalConfig.RocketMQ.Topic,
+			consumer.MessageSelector{Type: consumer.TAG, Expression: "*"},
+			func(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+				if consumerCtx.Err() != nil {
+					return consumer.SuspendCurrentQueueAMoment, consumerCtx.Err()
+				}
+
+				service := NewVoucherOrderService()
+				for _, msg := range msgs {
+					var order entity.VoucherOrder
+					if err := json.Unmarshal(msg.Body, &order); err != nil {
+						global.Logger.Error("消息反序列化失败: " + err.Error())
+						continue
+					}
+
+					global.Logger.Info(fmt.Sprintf("【异步任务-RocketMQ】收到订单，开始写入数据库: 订单号=%d", order.ID))
+					if err := service.handleVoucherOrder(&order); err != nil {
+						global.Logger.Error("处理订单失败: " + err.Error())
+						continue
+					}
+				}
+
+				return consumer.ConsumeSuccess, nil
+			},
+		); err != nil {
+			global.Logger.Error("RocketMQ 订单订阅失败: " + err.Error())
+			return
+		}
+
+		global.Logger.Info("RocketMQ 消费者已启动，正在监听订单消息...")
 	})
-
-	defer reader.Close()
-	global.Logger.Info("Kafka 消费者已启动，正在监听订单消息...")
-
-	for {
-		msg, err := reader.FetchMessage(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				global.Logger.Info("Kafka 消费者收到停止信号，准备退出")
-				return
-			}
-			global.Logger.Error("读取 Kafka 消息失败: " + err.Error())
-			continue
-		}
-
-		var order entity.VoucherOrder
-		// 反序列化 JSON 到实体
-		if err := json.Unmarshal(msg.Value, &order); err != nil {
-			global.Logger.Error("消息反序列化失败: " + err.Error())
-			if commitErr := reader.CommitMessages(ctx, msg); commitErr != nil {
-				global.Logger.Error("提交 Kafka offset 失败: " + commitErr.Error())
-			}
-			continue
-		}
-
-		global.Logger.Info(fmt.Sprintf("【异步任务-Kafka】收到订单，开始写入数据库: 订单号=%d", order.ID))
-
-		if err := service.handleVoucherOrder(&order); err != nil {
-			global.Logger.Error("处理订单失败，将等待Kafka重投: " + err.Error())
-			continue
-		}
-
-		if err := reader.CommitMessages(ctx, msg); err != nil {
-			global.Logger.Error("提交 Kafka offset 失败: " + err.Error())
-		}
-	}
-
 }
 
 func (vos *VoucherOrderService) handleVoucherOrder(order *entity.VoucherOrder) error {
@@ -202,7 +206,7 @@ func NewVoucherOrderService() *VoucherOrderService {
 	}
 }
 
-// SeckillVoucherByRedisAndKafka 将阻塞队列channel改为Kafka消息队列
+// SeckillVoucherByRedisAndKafka 将阻塞队列channel改为 RocketMQ 消息队列
 func (vos *VoucherOrderService) SeckillVoucherByRedisAndKafka(c context.Context, voucherId uint64) *dto.Result {
 	userId := util.GetUserId(c)
 	if userId == 0 {
@@ -239,16 +243,13 @@ func (vos *VoucherOrderService) SeckillVoucherByRedisAndKafka(c context.Context,
 		return dto.Fail("消息序列化失败")
 	}
 
-	// 3. 将订单丢进 Kafka
-	msg := kafka.Message{
-		Key:   []byte(strconv.FormatUint(userId, 10)), // 用 userId 做 Key，保证同一个用户的订单打到同一个 Partition
-		Value: orderBytes,
-	}
+	// 3. 将订单发送到 RocketMQ
+	msg := primitive.NewMessage(config.GlobalConfig.RocketMQ.Topic, orderBytes)
+	msg.WithKeys([]string{strconv.FormatUint(userId, 10)})
 
-	// 使用 WriteMessages 发送消息
-	err = global.KafkaWriter.WriteMessages(c, msg)
+	_, err = global.RocketMQProducer.SendSync(c, msg)
 	if err != nil {
-		global.Logger.Error("Kafka 消息发送失败: " + err.Error())
+		global.Logger.Error("RocketMQ 消息发送失败: " + err.Error())
 		rollbackSeckillReservation(c, voucherId, userId)
 		return dto.Fail("系统繁忙，请稍后再试！")
 	}

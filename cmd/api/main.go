@@ -9,10 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/amemiya02/hmdp-go/internal/global"
-
 	"github.com/amemiya02/hmdp-go/config"
-	_ "github.com/amemiya02/hmdp-go/config"
 	"github.com/amemiya02/hmdp-go/internal/global"
 	"github.com/amemiya02/hmdp-go/internal/handler"
 	"github.com/amemiya02/hmdp-go/internal/middleware"
@@ -23,6 +20,14 @@ import (
 
 func main() {
 	global.Logger.Info("Starting...")
+
+	if err := global.InitRocketMQProducer(); err != nil {
+		panic("rocketmq producer init failed: " + err.Error())
+	}
+	if err := global.InitRocketMQConsumer(); err != nil {
+		panic("rocketmq consumer init failed: " + err.Error())
+	}
+	service.StartVoucherOrderConsumer(context.Background())
 
 	//  注册路由
 	r := SetupRouter()
@@ -56,8 +61,11 @@ func main() {
 	}
 
 	service.StopVoucherOrderConsumer()
-	if err := global.CloseKafkaWriter(); err != nil {
-		global.Logger.Error("Kafka 生产者关闭失败: " + err.Error())
+	if err := global.CloseRocketMQConsumer(); err != nil {
+		global.Logger.Error("RocketMQ 消费者关闭失败: " + err.Error())
+	}
+	if err := global.CloseRocketMQProducer(); err != nil {
+		global.Logger.Error("RocketMQ 生产者关闭失败: " + err.Error())
 	}
 
 	global.Logger.Info("服务已完成优雅关闭")

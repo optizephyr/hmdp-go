@@ -8,8 +8,8 @@ require (
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
+	github.com/apache/rocketmq-client-go/v2 v2.1.2
 	github.com/redis/go-redis/v9 v9.17.3
-	github.com/segmentio/kafka-go v0.4.50
 	github.com/spf13/viper v1.21.0
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/gorm v1.25.3
