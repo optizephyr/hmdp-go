@@ -1,0 +1,92 @@
+services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: hmdp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: hmdp
+      TZ: Asia/Shanghai
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./hmdp.sql:/docker-entrypoint-initdb.d/hmdp.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - hmdp-net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: hmdp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - hmdp-net
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.2
+    container_name: hmdp-rocketmq-namesrv
+    restart: unless-stopped
+    ports:
+      - "9876:9876"
+    command: sh mqnamesrv
+    healthcheck:
+      test: ["CMD-SHELL", "ps -ef | grep -v grep | grep mqnamesrv"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - hmdp-net
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.2
+    container_name: hmdp-rocketmq-broker
+    restart: unless-stopped
+    depends_on:
+      rocketmq-namesrv:
+        condition: service_healthy
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+    command: sh mqbroker -c /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
+    volumes:
+      - ./docker/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf:ro
+      - rocketmq_store:/home/rocketmq/store
+      - rocketmq_logs:/home/rocketmq/logs
+    healthcheck:
+      test: ["CMD-SHELL", "ps -ef | grep -v grep | grep mqbroker"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - hmdp-net
+
+volumes:
+  mysql_data:
+  redis_data:
+  rocketmq_store:
+  rocketmq_logs:
+
+networks:
+  hmdp-net:
+    driver: bridge

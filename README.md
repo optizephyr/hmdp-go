@@ -57,6 +57,51 @@ go mod tidy
 - MySQL 数据库：`hmdp`，建表脚本`hmdp.sql`已提供。
 - RocketMQ Topic：`voucher-order-topic`
 
+### 使用 Docker 启动本地依赖（MySQL/Redis/RocketMQ）
+
+以下命令需在仓库根目录执行（即 `docker-compose.yaml` 与 `hmdp.sql` 所在目录）。
+
+启动依赖服务：
+
+```bash
+docker compose up -d
+docker compose ps
+```
+
+查看 RocketMQ Broker 日志：
+
+```bash
+docker compose logs --tail=200 rocketmq-broker
+```
+
+数据库初始化说明：首次启动会通过 compose 挂载自动导入 `hmdp.sql`，通常无需手动重复导入。
+
+如需手动导入（例如你调整了脚本并希望立即重导），可执行：
+
+```bash
+docker exec -i hmdp-mysql mysql -uroot -p123456 hmdp < hmdp.sql
+```
+
+如需重置数据库并重新自动导入，使用：
+
+```bash
+docker compose down -v && docker compose up -d
+```
+
+停止命令（两者择一）：
+
+仅停止并删除容器/网络，保留 volumes：
+
+```bash
+docker compose down
+```
+
+停止并删除容器/网络及 volumes（会清空数据）：
+
+```bash
+docker compose down -v
+```
+
 ### 4. 修改配置
 
 编辑 `config/config.yaml`，重点检查以下字段：
