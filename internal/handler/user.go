@@ -1,0 +1,88 @@
+package handler
+
+import (
+	"net/http"
+
+	"github.com/amemiya02/hmdp-go/internal/model/dto"
+	"github.com/amemiya02/hmdp-go/internal/service"
+	"github.com/amemiya02/hmdp-go/internal/util"
+	"github.com/gin-gonic/gin"
+)
+
+type UserHandler struct {
+	UserService     *service.UserService
+	UserInfoService *service.UserInfoService
+}
+
+func NewUserHandler() *UserHandler {
+	return &UserHandler{
+		UserService:     service.NewUserService(),
+		UserInfoService: service.NewUserInfoService(),
+	}
+}
+
+func (uh *UserHandler) Login(c *gin.Context) {
+	var form = dto.LoginForm{}
+	if err := c.ShouldBindJSON(&form); err != nil {
+		c.JSON(http.StatusOK, dto.Fail(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, uh.UserService.Login(c, form))
+}
+
+func (uh *UserHandler) SendCode(c *gin.Context) {
+	var req struct {
+		Phone string `form:"phone"`
+	}
+
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusOK, dto.Fail("未传入手机号！"))
+		return
+	}
+	c.JSON(http.StatusOK, uh.UserService.SendCode(c, req.Phone))
+}
+
+func (uh *UserHandler) Me(c *gin.Context) {
+	userDTO := util.GetUser(c)
+	if userDTO == nil {
+		c.JSON(http.StatusOK, dto.Fail("用户不存在！"))
+		return
+	}
+	c.JSON(http.StatusOK, dto.OkWithData(userDTO))
+}
+
+func (uh *UserHandler) Info(c *gin.Context) {
+	var req struct {
+		ID uint64 `uri:"id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		c.JSON(http.StatusOK, dto.Fail(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, uh.UserInfoService.FindUserInfoById(c, req.ID))
+}
+
+func (uh *UserHandler) QueryUserByID(c *gin.Context) {
+	var req struct {
+		ID uint64 `uri:"id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		c.JSON(http.StatusOK, dto.Fail(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, uh.UserService.FindUserByID(c, req.ID))
+}
+
+func (uh *UserHandler) Logout(c *gin.Context) {
+	c.JSON(http.StatusOK, uh.UserService.Logout(c))
+}
+
+func (uh *UserHandler) Sign(c *gin.Context) {
+	c.JSON(http.StatusOK, uh.UserService.Sign(c))
+}
+
+// SignCount 统计本月连续签到天数 (GET /user/sign/count)
+func (h *UserHandler) SignCount(c *gin.Context) {
+	result := h.UserService.SignCount(c)
+	c.JSON(http.StatusOK, result)
+}
