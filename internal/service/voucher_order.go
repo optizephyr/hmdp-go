@@ -82,7 +82,8 @@ func handleVoucherOrderTask() {
 }
 
 // StartVoucherOrderConsumer 启动 RocketMQ 消费者。
-func StartVoucherOrderConsumer(ctx context.Context) {
+func StartVoucherOrderConsumer(ctx context.Context) error {
+	var startErr error
 	startVoucherOrderConsumerOnce.Do(func() {
 		if ctx == nil {
 			ctx = context.Background()
@@ -90,17 +91,15 @@ func StartVoucherOrderConsumer(ctx context.Context) {
 		consumerCtx, cancel := context.WithCancel(ctx)
 		voucherOrderConsumerCancel = cancel
 
-		startVoucherOrderTaskOnce.Do(func() {
-			go handleVoucherOrderTask()
-		})
-
 		if global.RocketMQConsumer == nil {
 			global.Logger.Warn("RocketMQ 消费者未初始化，跳过订单订阅")
+			startErr = fmt.Errorf("rocketmq consumer not initialized")
 			return
 		}
 
 		if err := global.RocketMQConsumer.Start(); err != nil {
 			global.Logger.Error("RocketMQ 消费者启动失败: " + err.Error())
+			startErr = err
 			return
 		}
 
@@ -131,11 +130,18 @@ func StartVoucherOrderConsumer(ctx context.Context) {
 			},
 		); err != nil {
 			global.Logger.Error("RocketMQ 订单订阅失败: " + err.Error())
+			startErr = err
 			return
 		}
 
+		startVoucherOrderTaskOnce.Do(func() {
+			go handleVoucherOrderTask()
+		})
+
 		global.Logger.Info("RocketMQ 消费者已启动，正在监听订单消息...")
 	})
+
+	return startErr
 }
 
 func (vos *VoucherOrderService) handleVoucherOrder(order *entity.VoucherOrder) error {

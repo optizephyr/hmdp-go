@@ -59,6 +59,7 @@ services:
   rocketmq-broker:
     image: apache/rocketmq:5.3.2
     container_name: hmdp-rocketmq-broker
+    user: root
     restart: unless-stopped
     depends_on:
       rocketmq-namesrv:
@@ -68,11 +69,13 @@ services:
       - "10911:10911"
     environment:
       NAMESRV_ADDR: rocketmq-namesrv:9876
+      JAVA_OPT_EXT: -Xms256m -Xmx256m -Xmn128m
     command: sh mqbroker -c /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
     volumes:
       - ./docker/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf:ro
-      - rocketmq_store:/home/rocketmq/store
-      - rocketmq_logs:/home/rocketmq/logs
+      # 👇 新增的持久化数据卷挂载
+      - rocketmq_broker_data:/home/rocketmq/store
+      - rocketmq_broker_logs:/home/rocketmq/logs
     healthcheck:
       test: ["CMD-SHELL", "ps -ef | grep -v grep | grep mqbroker"]
       interval: 10s
@@ -99,11 +102,12 @@ services:
     networks:
       - hmdp-net
 
+# 👇 声明所有使用到的数据卷
 volumes:
   mysql_data:
   redis_data:
-  rocketmq_store:
-  rocketmq_logs:
+  rocketmq_broker_data:
+  rocketmq_broker_logs:
 
 networks:
   hmdp-net:

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/amemiya02/hmdp-go/config"
@@ -13,6 +14,7 @@ import (
 	"github.com/amemiya02/hmdp-go/internal/global"
 	"github.com/amemiya02/hmdp-go/internal/model/dto"
 	"github.com/amemiya02/hmdp-go/internal/model/entity"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 )
 
@@ -27,8 +29,36 @@ func (p *testVoucherOrderProducer) SendSync(ctx context.Context, msgs ...*primit
 	return &primitive.SendResult{Status: primitive.SendOK}, nil
 }
 
+type testRocketMQConsumer struct {
+	startErr     error
+	subscribeErr error
+}
+
+func (c *testRocketMQConsumer) Start() error {
+	return c.startErr
+}
+
+func (c *testRocketMQConsumer) Subscribe(topic string, selector consumer.MessageSelector, callback func(context.Context, ...*primitive.MessageExt) (consumer.ConsumeResult, error)) error {
+	return c.subscribeErr
+}
+
+func (c *testRocketMQConsumer) Unsubscribe(topic string) error {
+	return nil
+}
+
+func (c *testRocketMQConsumer) Shutdown() error {
+	return nil
+}
+
 func testVoucherOrderContext(userID uint64) context.Context {
 	return context.WithValue(context.Background(), constant.ContextUserKey, &dto.UserDTO{ID: userID})
+}
+
+func resetVoucherOrderConsumerState() {
+	startVoucherOrderConsumerOnce = sync.Once{}
+	startVoucherOrderTaskOnce = sync.Once{}
+	stopVoucherOrderConsumerOnce = sync.Once{}
+	voucherOrderConsumerCancel = nil
 }
 
 func prepareVoucherOrderSeckillState(t *testing.T, voucherID uint64, stock int64) {
@@ -104,6 +134,25 @@ func TestSeckillVoucherByRedisAndRocketMQ_RollsBackReservationWhenSendFails(t *t
 	}
 	if gotVoucherID != voucherID || gotUserID != userID {
 		t.Fatalf("rollback called with wrong ids: got voucher=%d user=%d", gotVoucherID, gotUserID)
+	}
+}
+
+func TestStartVoucherOrderConsumer_ReturnsSubscribeError(t *testing.T) {
+	oldConsumer := global.RocketMQConsumer
+	defer func() {
+		global.RocketMQConsumer = oldConsumer
+		resetVoucherOrderConsumerState()
+	}()
+
+	global.RocketMQConsumer = &testRocketMQConsumer{subscribeErr: errors.New("subscribe failed")}
+	resetVoucherOrderConsumerState()
+
+	err := StartVoucherOrderConsumer(context.Background())
+	if err == nil {
+		t.Fatal("expected start error, got nil")
+	}
+	if !strings.Contains(err.Error(), "subscribe failed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

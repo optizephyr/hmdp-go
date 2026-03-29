@@ -27,7 +27,9 @@ func main() {
 	if err := global.InitRocketMQConsumer(); err != nil {
 		panic("rocketmq consumer init failed: " + err.Error())
 	}
-	service.StartVoucherOrderConsumer(context.Background())
+	if err := service.StartVoucherOrderConsumer(context.Background()); err != nil {
+		panic("rocketmq consumer start failed: " + err.Error())
+	}
 
 	//  注册路由
 	r := SetupRouter()
