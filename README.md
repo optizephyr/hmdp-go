@@ -102,6 +102,29 @@ docker compose down
 docker compose down -v
 ```
 
+### 使用 Nginx 网关访问 API
+
+启动 Nginx 反向代理后，可以通过 port 8080 访问后端 API：
+
+```bash
+docker compose up -d nginx
+docker compose ps
+```
+
+验证代理是否生效（需要先启动 Go 后端 `go run ./cmd/api/main.go`）：
+
+```bash
+curl http://localhost:8080/shop-type/list
+```
+
+停止 Nginx：
+
+```bash
+docker compose stop nginx
+```
+
+> 注意：确保 Go 后端已启动，否则返回 502 Bad Gateway。
+
 ### 4. 修改配置
 
 编辑 `config/config.yaml`，重点检查以下字段：
