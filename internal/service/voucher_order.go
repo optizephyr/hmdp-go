@@ -17,8 +17,6 @@ import (
 	"github.com/amemiya02/hmdp-go/internal/model/entity"
 	"github.com/amemiya02/hmdp-go/internal/repository"
 	"github.com/amemiya02/hmdp-go/internal/util"
-	"github.com/go-redsync/redsync/v4"
-	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
 	"gorm.io/gorm"
@@ -31,9 +29,6 @@ const (
 	LockKeyPrefix  = "order:"
 	LockTimeOutSec = 100
 )
-
-// redsync 相关
-var globalRedsync *redsync.Redsync
 
 // ================== 异步秒杀相关 BEGIN =====================
 //
@@ -55,9 +50,6 @@ var stopVoucherOrderConsumerOnce sync.Once
 // 利用 Go 的 init() 函数，在程序一启动时就开启后台消费协程
 // 相当于 Java 里的 @PostConstruct 加上 new Thread().start()
 func init() {
-	// redsync 连接池
-	pool := goredis.NewPool(global.RedisClient)
-	globalRedsync = redsync.New(pool)
 	consumerCtx, cancel := context.WithCancel(context.Background())
 	voucherOrderConsumerCancel = cancel
 	// 开启一个后台协程，专门负责从队列里取订单并写数据库
@@ -141,17 +133,16 @@ func (vos *VoucherOrderService) handleVoucherOrder(order *entity.VoucherOrder) e
 	c := context.Background()
 	userId := order.UserID
 	voucherId := order.VoucherID
-	// 其实可以不加锁 redis已经保证安全
-	// 但是为了兜底也可以加锁，逻辑和createVoucherOrder一样 这里演示redsync的使用
 	lockName := LockKeyPrefix + strconv.FormatUint(userId, 10)
-	mutex := globalRedsync.NewMutex(lockName)
-	if err := mutex.Lock(); err != nil {
+	redisLock := util.NewRedisLockWithWait(c, lockName, global.RedisClient, 10*time.Second)
+	if !redisLock.TryLock(LockTimeOutSec) {
+		err := fmt.Errorf("failed to obtain voucher order lock: %s", lockName)
 		global.Logger.Error(err.Error())
 		return err
 	}
 	defer func() {
-		if _, err := mutex.Unlock(); err != nil {
-			global.Logger.Error("释放 redsync 锁失败: " + err.Error())
+		if err := redisLock.Unlock(); err != nil {
+			global.Logger.Error("释放 redislock 锁失败: " + err.Error())
 		}
 	}()
 
@@ -362,9 +353,8 @@ func (vos *VoucherOrderService) createVoucherOrder(c context.Context, voucherId 
 	// 2. 拼接锁的名称，保持细粒度锁的特性（只锁当前用户）
 	lockName := LockKeyPrefix + strconv.FormatUint(userId, 10)
 
-	// 3. 创建自定义的 Redis 分布式锁实例
-	// redisLock := util.NewSimpleRedisLock(c, lockName, global.RedisClient)
-	redisLock := util.NewRedissonLock(c, lockName, global.RedisClient, 10*time.Second)
+	// 3. 创建基于 redislock 的分布式锁实例
+	redisLock := util.NewRedisLockWithWait(c, lockName, global.RedisClient, 10*time.Second)
 
 	// 4. 尝试获取锁，设置 10 秒超时时间（防止应用宕机导致死锁）
 	isLocked := redisLock.TryLock(LockTimeOutSec)
