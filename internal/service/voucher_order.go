@@ -22,6 +22,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type voucherOrderMQProducer interface {
+	SendSync(ctx context.Context, msgs ...*primitive.Message) (*primitive.SendResult, error)
+}
+
 // 全局的 Map，用来存放每个用户专属的锁 单机锁
 var userLockMap sync.Map
 
@@ -43,6 +47,9 @@ var rollbackSeckillScript = redis.NewScript(rollbackLua)
 // 定义阻塞队列 (平替 Java 的 ArrayBlockingQueue)
 // 创建一个容量为 1024 * 1024 的带有缓冲区的通道
 var orderTasks = make(chan *entity.VoucherOrder, 1024*1024)
+
+var voucherOrderProducer voucherOrderMQProducer
+var rollbackReservationFn = rollbackSeckillReservation
 
 var voucherOrderConsumerCancel context.CancelFunc
 var stopVoucherOrderConsumerOnce sync.Once
@@ -206,8 +213,8 @@ func NewVoucherOrderService() *VoucherOrderService {
 	}
 }
 
-// SeckillVoucherByRedisAndKafka 将阻塞队列channel改为 RocketMQ 消息队列
-func (vos *VoucherOrderService) SeckillVoucherByRedisAndKafka(c context.Context, voucherId uint64) *dto.Result {
+// SeckillVoucherByRedisAndRocketMQ 将阻塞队列channel改为 RocketMQ 消息队列
+func (vos *VoucherOrderService) SeckillVoucherByRedisAndRocketMQ(c context.Context, voucherId uint64) *dto.Result {
 	userId := util.GetUserId(c)
 	if userId == 0 {
 		return dto.Fail("请先登录！")
@@ -239,23 +246,36 @@ func (vos *VoucherOrderService) SeckillVoucherByRedisAndKafka(c context.Context,
 	// 2. 将订单序列化为 JSON
 	orderBytes, err := json.Marshal(voucherOrder)
 	if err != nil {
-		rollbackSeckillReservation(c, voucherId, userId)
+		rollbackReservationFn(c, voucherId, userId)
 		return dto.Fail("消息序列化失败")
 	}
 
 	// 3. 将订单发送到 RocketMQ
 	msg := primitive.NewMessage(config.GlobalConfig.RocketMQ.Topic, orderBytes)
-	msg.WithKeys([]string{strconv.FormatUint(userId, 10)})
+	msg.WithKeys([]string{strconv.FormatUint(userId, 10), strconv.FormatInt(orderId, 10)})
 
-	_, err = global.RocketMQProducer.SendSync(c, msg)
+	producer := voucherOrderProducer
+	if producer == nil {
+		producer = global.RocketMQProducer
+	}
+	if producer == nil {
+		rollbackReservationFn(c, voucherId, userId)
+		return dto.Fail("系统繁忙，请稍后再试！")
+	}
+
+	_, err = producer.SendSync(c, msg)
 	if err != nil {
 		global.Logger.Error("RocketMQ 消息发送失败: " + err.Error())
-		rollbackSeckillReservation(c, voucherId, userId)
+		rollbackReservationFn(c, voucherId, userId)
 		return dto.Fail("系统繁忙，请稍后再试！")
 	}
 
 	// 4. 返回订单号给前端
 	return dto.OkWithData(orderId)
+}
+
+func (vos *VoucherOrderService) SeckillVoucherByRedisAndKafka(c context.Context, voucherId uint64) *dto.Result {
+	return vos.SeckillVoucherByRedisAndRocketMQ(c, voucherId)
 }
 
 // SeckillVoucherByRedis 基于redis和lua脚本的异步秒杀抢券
