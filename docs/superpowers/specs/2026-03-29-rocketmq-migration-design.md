@@ -13,6 +13,8 @@
 - 保持“消费成功才确认，消费失败可重试”的现有处理语义不变。
 - 保持现有消息体格式 `VoucherOrder JSON` 不变。
 - 保持业务正确性仍然由 Redis 预扣、一人一单校验、分布式锁和数据库事务共同保障。
+- 完成全量文档迁移：将 `README.md` 中所有面向当前实现的 Kafka 描述替换为 RocketMQ 语义说明，避免“代码已迁移、文档仍旧 Kafka”的不一致状态。
+- 明确消费异常边界：业务失败返回重试；结构性坏消息（反序列化失败）记录后跳过，避免毒消息无限重试。
 
 ## 非目标
 
@@ -20,6 +22,7 @@
 - 不对秒杀业务流程做额外重构。
 - 不修改订单消息的数据结构和业务字段。
 - 不围绕 MQ 抽象出通用消息总线层。
+- 不保留“当前实现仍为 Kafka”的运行文档描述；本次运行文档范围限定为 `README.md` 与 `AGENTS.md`，仅允许在迁移设计类文档中保留 Kafka 对比背景。
 
 ## 当前现状
 
@@ -67,6 +70,8 @@
 
 - 现有 `internal/global/kafka.go` 将被删除或由新文件替代，避免命名与实现不一致。
 - 生命周期管理统一放在 `internal/global`，业务层仅关心“发送订单消息”和“启动订单消费者”。
+- 启停唯一归口：`cmd/api/main.go` 负责初始化 producer/consumer、触发 `StartVoucherOrderConsumer`，并在退出时执行“停止订阅 -> 关闭 consumer -> 关闭 producer”。
+- 启动失败策略：producer 或 consumer 初始化失败时直接终止进程启动，避免服务在消息链路不可用时继续对外提供秒杀能力。
 
 ### 2. 订单消息生产
 
@@ -85,7 +90,7 @@
 发送策略：
 
 - 使用同步发送，确保只有消息真正发送成功才向前端返回成功。
-- `Keys` 使用 `userId` 或 `orderId` 组合值，便于日志检索和消息追踪。
+- `Keys` 固定为两个值：`userId` 与 `orderId`（字符串化），便于日志检索和消息追踪。
 - Topic 沿用单一订单主题，仅承载 `voucher-order` 类型消息。
 
 ### 3. 订单消息消费
@@ -98,6 +103,7 @@
 - 调用 `handleVoucherOrder` 完成加锁、查重、扣减库存和创建订单。
 - 业务处理成功时返回 `ConsumeSuccess`。
 - 业务处理失败时返回 `ConsumeRetryLater`，交由 RocketMQ 重试。
+- 反序列化失败视为坏消息，记录完整上下文后返回 `ConsumeSuccess` 跳过，避免无限重试阻塞队列。
 
 语义映射如下：
 
@@ -187,11 +193,18 @@ rocketmq:
 - JSON 序列化失败：直接回滚 Redis 预扣并返回失败。
 - RocketMQ 发送失败：记录错误日志，回滚 Redis 预扣，返回“系统繁忙，请稍后再试”。
 
+Redis 预扣回滚定义（由 `rollback.lua` 承担）：
+
+- 回补库存计数。
+- 回滚用户下单占位标记。
+- 保证“发送失败后用户可再次发起下单”的可恢复语义。
+
 ### 消费端
 
 - 消息反序列化失败：记录错误日志，返回成功以跳过坏消息，避免无限重试。
 - 业务处理失败：记录错误日志并返回重试状态，由 RocketMQ 进行后续重投。
 - 重复下单：保持现有幂等语义，视为业务已处理完成，不作为失败重试。
+- 订阅策略：使用 `Tag=*` 覆盖当前主题下订单消息；本次不引入多 tag 路由。
 
 ## 测试设计
 
@@ -200,7 +213,7 @@ rocketmq:
 优先补充与消息发送失败回滚相关的测试，覆盖以下行为：
 
 - 消息发送失败时触发 Redis 预扣回滚。
-- 消费成功时不会重复执行确认逻辑。
+- 消费成功路径返回 `ConsumeSuccess`，且不会触发 RocketMQ 重试。
 - 消息体序列化与反序列化兼容当前 `VoucherOrder` 结构。
 
 ### 集成验证
@@ -218,16 +231,23 @@ rocketmq:
 - `go test ./...`
 - 至少保证项目编译通过，已有测试不因 MQ 替换失效。
 
+### 文档一致性验证
+
+- 在仓库范围执行关键字扫描，确保运行文档中不再出现 Kafka 作为“当前实现”的表述。
+- 对 README 采用“语义重写”而非机械替换，至少覆盖以下章节：技术栈、环境依赖、配置键、故障排查、秒杀链路说明、选型说明、代码示例、面试表述。
+- 允许 `docs/superpowers/specs` 与 `docs/superpowers/plans` 保留 Kafka 迁移背景描述；其余运行文档需以 RocketMQ 为当前实现。
+
 ## 风险与缓解
 
 ### 风险 1：消费者生命周期管理不稳定
 
-当前消费者通过 `service.init()` 启动，初始化顺序需要与全局 RocketMQ 客户端初始化保持兼容。
+消费者生命周期必须由 `cmd/api/main.go` 统一编排；若存在历史 `service.init()` 启动路径，需要在本次迁移中移除，避免双启动或初始化竞态。
 
 缓解：
 
-- 实现时优先复用当前启动时机。
-- 如果发现初始化顺序不稳定，则将消费者显式启动入口收口，但仅限本次需求必要范围内。
+- 显式保持单入口：`InitRocketMQProducer` -> `InitRocketMQConsumer` -> `StartVoucherOrderConsumer`。
+- 显式保持单出口：`StopVoucherOrderConsumer` -> `CloseRocketMQConsumer` -> `CloseRocketMQProducer`。
+- 任一步骤失败立即中止启动并输出结构化错误日志。
 
 ### 风险 2：RocketMQ 重试语义与 Kafka offset 模型不同
 
@@ -246,6 +266,32 @@ rocketmq:
 
 - 在发送和消费日志中补充 `topic`、`orderId`、`userId`、消息 key 等关键信息。
 
+### 风险 4：切换窗口旧消息积压导致语义争议
+
+若 Kafka 侧仍存在未消费消息，直接切换 RocketMQ 可能造成“旧链路订单未落库”或“双链路重复消费”的争议。
+
+缓解：
+
+- 切换前冻结 Kafka 新写入入口，仅保留消费清尾。
+- 对 Kafka backlog 做一次可观测清尾（或导出对账）后再停 Kafka 消费者。
+- 切换后以 RocketMQ 作为唯一写入与消费链路。
+- 若需回滚，只回滚到“单链路 Kafka”或“单链路 RocketMQ”，避免双链路并跑。
+
+## 验收标准
+
+以下条件全部满足即视为本次迁移完成：
+
+1. 代码层：运行路径（`cmd/`、`internal/`、`config/`、`go.mod/go.sum`）不再依赖 Kafka 客户端与 Kafka 配置键。
+   - 允许 `docs/superpowers/specs`、`docs/superpowers/plans` 中保留迁移背景描述。
+   - 不要求清除所有历史字符串或注释中的 Kafka 字样，但运行时代码路径不得引用 Kafka SDK、Kafka 配置结构或 Kafka 启停逻辑。
+2. 行为层：秒杀接口仍满足“预扣成功后快速返回订单号”；发送失败触发 Redis 预扣回滚；消费业务失败可重试。
+3. 异常边界：坏消息（反序列化失败）被记录并跳过，且不会触发无限重试。
+4. 文档层：`README.md` 全量以 RocketMQ 作为当前实现，不保留“当前使用 Kafka”的描述。
+5. 验证层：
+   - 通过 `go test ./...`。
+   - 启动验证 `go run ./cmd/api/main.go`，确认 RocketMQ 初始化与关闭流程无 panic。
+   - 文档扫描范围固定为 `README.md` 与 `AGENTS.md`；关键字扫描验证这两个运行文档不再声明 Kafka 为当前实现。
+
 ## 文件变更范围
 
 预计涉及以下文件：
@@ -259,6 +305,7 @@ rocketmq:
 - 修改：`README.md`
 - 修改：`go.mod`
 - 修改：`go.sum`
+- 允许补充修改：`AGENTS.md`（若涉及运行指引中的 MQ 描述一致性修订）
 
 ## 设计结论
 

@@ -12,7 +12,7 @@
 
 本项目是基于 Go 语言生态对经典 O2O 社交与营销平台（[原黑马点评](https://www.bilibili.com/video/BV1NV411u7GE/)）的深度重构与架构升级。项目模拟了类似大众点评的核心业务场景，完成了从用户鉴权、商户查询、社交探店、到高并发秒杀抢券的完整业务闭环。
 
-在重构过程中，不仅实现了单体架构向高并发场景的平滑演进，更深度结合了 **Go 语言的高并发特性**（Goroutine + Channel）与多种分布式中间件（Redis、Kafka），系统性地解决了分布式会话、缓存雪崩/击穿/穿透、高并发秒杀超卖、分布式锁以及异步削峰等复杂架构痛点。适合作为展示高并发业务落地能力和 Go 生态工程化实践的标杆项目。
+在重构过程中，不仅实现了单体架构向高并发场景的平滑演进，更深度结合了 **Go 语言的高并发特性**（Goroutine + Channel）与多种分布式中间件（Redis、RocketMQ），系统性地解决了分布式会话、缓存雪崩/击穿/穿透、高并发秒杀超卖、分布式锁以及异步削峰等复杂架构痛点。适合作为展示高并发业务落地能力和 Go 生态工程化实践的标杆项目。
 
 - [原版 Java 架构参考](https://github.com/KNeegcyao/dianping)
 
@@ -24,7 +24,7 @@
 - MySQL
 - Redis
 - Lua
-- Kafka
+- RocketMQ
 
 ## Quick Start
 
@@ -35,7 +35,7 @@
 - Go: `>= 1.25.6`
 - MySQL: `8.x`
 - Redis: `6.x/7.x`
-- Kafka: `3.x`（或兼容发行版）
+- RocketMQ: `5.x`（NameServer + Broker）
 - 黑马点评前端：用原项目的`nginx-1.18.0.zip`即可，解压后直接运行`nginx.exe`。
 
 ### 2. 拉取依赖
@@ -50,12 +50,12 @@ go mod tidy
 
 - MySQL: `127.0.0.1:3306`
 - Redis: `127.0.0.1:6379`
-- Kafka: `127.0.0.1:9092`
+- RocketMQ NameServer: `127.0.0.1:9876`
 
 并提前创建数据库与 Topic：
 
 - MySQL 数据库：`hmdp`，建表脚本`hmdp.sql`已提供。
-- Kafka Topic：`voucher-order-topic`
+- RocketMQ Topic：`voucher-order-topic`
 
 ### 4. 修改配置
 
@@ -65,8 +65,10 @@ go mod tidy
 - `mysql.password`
 - `mysql.dbname`
 - `redis.host` / `redis.port`
-- `kafka.brokers`
-- `kafka.topic`
+- `rocketmq.name_servers`
+- `rocketmq.topic`
+- `rocketmq.producer_group`
+- `rocketmq.consumer_group`
 - `server.port`
 
 ### 5. 启动服务
@@ -94,7 +96,7 @@ go test ./...
 ### 常见问题
 
 - Redis 连接失败：检查 `redis.host + redis.port` 是否可达（端口字段是 `:6379` 这种格式）。
-- Kafka 无法消费：确认 `group_id`、`topic` 与 broker 地址一致，且 broker 对外地址可被本机访问。
+- RocketMQ 无法消费：确认 `name_servers`、`topic`、`consumer_group` 配置一致，且 NameServer/Broker 对当前机器可达。
 - MySQL 认证失败：检查账号密码、数据库名与字符集配置。
 
 ## 面试口径校对（与当前代码一致）
@@ -103,14 +105,14 @@ go test ./...
 
 | 主题 | 当前实现 | 面试建议说法 |
 |---|---|---|
-| 秒杀入口 | `SeckillVoucherByRedisAndKafka`（Lua 预检 + Kafka 异步落库） | 先讲当前主链路，再补充曾保留过 `channel` 版本用于演进对比。 |
-| Kafka 消费提交 | 使用 `reader.ReadMessage()`，当前为自动提交 offset | 明确这是“当前版本语义”；若追问高可靠消费，再说明可升级为 `FetchMessage + CommitMessages` 手动提交。 |
+| 秒杀入口 | `SeckillVoucherByRedisAndRocketMQ`（Lua 预检 + RocketMQ 异步落库） | 先讲当前主链路，再补充曾保留过 `channel` 版本用于演进对比。 |
+| RocketMQ 消费确认 | PushConsumer 回调返回 `ConsumeSuccess` / `ConsumeRetryLater` | 重点说明“业务失败可重试、坏消息跳过”策略，并强调幂等落库。 |
 | 缓存逻辑过期 | Value 内有逻辑过期时间，同时当前实现也设置了物理 TTL | 讲成“逻辑过期 + 物理 TTL 兜底”的混合策略，不要说“永不过期”。 |
 | 自研分布式锁 | 已实现可重试 + 看门狗续期；可重入尚未落地 | 先讲已上线能力，再把可重入作为后续演进项。 |
 
 一句话版本（建议开场）：
 
-> 项目当前线上主链路是 `Redis+Lua` 做秒杀资格原子预检，`Kafka` 做异步削峰，MySQL 用 `stock > 0` 条件更新防超卖，缓存侧按场景组合使用空值缓存、互斥锁和逻辑过期策略。
+> 项目当前线上主链路是 `Redis+Lua` 做秒杀资格原子预检，`RocketMQ` 做异步削峰，MySQL 用 `stock > 0` 条件更新防超卖，缓存侧按场景组合使用空值缓存、互斥锁和逻辑过期策略。
 
 ## 架构亮点与核心技术选型
 
@@ -121,7 +123,7 @@ go test ./...
 | 集群下登录态不共享、频繁掉线 | Redis + Token 无状态会话，双中间件鉴权 | `RefreshTokenInterceptor` 全局续期 + `LoginInterceptor` 路由鉴权 | 兼顾开放接口匿名访问和登录态平滑续期 |
 | 高并发读场景数据库压力大 | Cache Aside + 多策略缓存治理 | 空值缓存防穿透、互斥锁与逻辑过期抗击穿、随机 TTL 抗雪崩 | 提升命中率，降低 DB 峰值压力 |
 | 秒杀链路并发冲突与超卖风险 | Redis + Lua 资格预检，MySQL 条件更新扣库存 | Lua 原子校验库存/一人一单；`stock > 0` 防超卖 | 把高并发冲突前移到 Redis 层处理 |
-| 秒杀高峰期间数据库写入抖动 | Kafka 异步化下单 | 预检成功即投递消息，消费端异步落库 | 请求快速返回，削峰填谷保护 DB |
+| 秒杀高峰期间数据库写入抖动 | RocketMQ 异步化下单 | 预检成功即投递消息，消费端异步落库 | 请求快速返回，削峰填谷保护 DB |
 | 分布式环境下订单 ID 唯一性 | Redis 全局 ID 生成器 | 时间戳 + Redis 自增序列 | 支撑高并发下唯一、趋势递增 ID |
 | 社交与地理检索场景 SQL 代价高 | Redis 多数据结构建模 | ZSet/Set/GEO/BitMap/HyperLogLog 分场景优化 | 用空间换时间，减少复杂 SQL |
 
@@ -344,8 +346,8 @@ Go 语言的并发模型非常轻量，开启 Goroutine 成本极低。将重建
    - 利用 Redis 的 `Set` 结构判断当前用户 ID 是否已存在（防止重复刷单）。
    - 若校验通过，则扣减 Redis 中的缓存库存，并将用户 ID 加入 `Set` 中。
 3. **响应前端**：Go 代码根据 Lua 脚本的返回值（`0`: 成功, `1`: 库存不足, `2`: 重复下单）快速做出判断。如果为 1 或 2，直接返回对应的错误信息；如果为 0，则预检成功。
-4. **异步投递与返回**：预检成功后，将包含订单详细信息的 Message 异步投递到 **Kafka** 消息队列中，随后立即将 `订单 ID` 返回给前端响应用户。
-5. **后台异步落库**：后台的 Kafka Consumer 独立协程持续监听队列，拉取到订单消息后，再从容地去执行 MySQL 数据库的扣减真实库存和创建订单表记录逻辑。
+4. **异步投递与返回**：预检成功后，将包含订单详细信息的 Message 同步发送到 **RocketMQ** 主题中，发送成功后立即将 `订单 ID` 返回给前端响应用户。
+5. **后台异步落库**：后台的 RocketMQ PushConsumer 持续监听主题，消费到订单消息后执行 MySQL 的扣减真实库存和创建订单表记录逻辑。
 
 ---
 
@@ -432,7 +434,7 @@ Go 语言的并发模型非常轻量，开启 Goroutine 成本极低。将重建
 
 ![image-20241207183707979](https://cdn.jsdelivr.net/gh/KNeegcyao/picdemo/img/image-20241207183707979.png)
 
-### 基于 Kafka 消息队列实现异步秒杀下单
+### 基于 RocketMQ 消息队列实现异步秒杀下单
 
 ### 为什么用异步秒杀（引入消息队列的背景）?
 
@@ -452,14 +454,14 @@ Go 语言的并发模型非常轻量，开启 Goroutine 成本极低。将重建
 
 1. **极速前置校验（Redis + Lua）**：
    当用户发起下单请求时，直接在 Redis 中通过 Lua 脚本原子性地判断“库存是否充足”以及“该用户是否已下单”。如果条件满足，直接在 Redis 里扣减缓存库存，并将用户 ID 加入已购买集合。
-2. **异步解耦（Kafka 消息队列）**：
-   Redis 校验通过后，我们立刻为用户生成 `订单ID`，并将包含了 `订单ID, 用户ID, 优惠券ID` 的消息投递到 **Kafka 消息队列**中，随后立刻向前端返回下单成功（响应耗时通常在个位数毫秒级）。
+2. **异步解耦（RocketMQ 消息队列）**：
+   Redis 校验通过后，我们立刻为用户生成 `订单ID`，并将包含了 `订单ID, 用户ID, 优惠券ID` 的消息投递到 **RocketMQ Topic** 中，随后立刻向前端返回下单成功（响应耗时通常在个位数毫秒级）。
 3. **后台平滑落库（削峰填谷）**：
-   后台开启独立的 Goroutine 作为消费者，平缓地从 Kafka 中拉取排队的订单消息，从容地执行 MySQL 的“减库存、写订单”逻辑。即使前端有 10 万并发瞬间涌入，MySQL 侧也只会以自己能承受的速率（例如每秒 1000 个）去慢慢消费，彻底保护了数据库。
+   后台通过 PushConsumer 回调平缓消费排队的订单消息，从容执行 MySQL 的“减库存、写订单”逻辑。即使前端有 10 万并发瞬间涌入，MySQL 侧也只会以自己能承受的速率（例如每秒 1000 个）去慢慢消费，彻底保护了数据库。
 
-### 为什么选择 Kafka？
+### 为什么选择 RocketMQ？
 
-相比于 Redis Stream 或 RabbitMQ，Kafka 在设计之初就是为了应对**超大规模的数据吞吐量**。它基于顺序磁盘 I/O 和零拷贝技术，单机可轻松支撑十万乃至百万级 TPS。在应对秒杀这种**瞬时流量洪峰**时，Kafka 的缓冲和堆积能力更加出色。
+相比仅使用本地队列或 Redis List，RocketMQ 提供了更完整的生产级能力：消息持久化、消费重试、消费者组负载均衡与可观测的主题模型。在应对秒杀这种**瞬时流量洪峰**时，RocketMQ 能稳定承接前端突发写入，并把数据库写压力平滑到可控范围。
 
 ---
 
@@ -468,13 +470,13 @@ Go 语言的并发模型非常轻量，开启 Goroutine 成本极低。将重建
 在秒杀场景下，消息丢失意味着用户付了钱或抢到了名额，但数据库里没订单。为了保证消息的绝对可靠，我们需要从三个维度来保障：
 
 1. **生产者（Producer）发送不丢失**：
-   - 开启 Kafka 的 `acks=all` 机制，确保消息被写入所有 ISR（同步副本）后才返回成功。
-   - 增加本地重试机制。在投递失败时，利用 Go 协程进行一定次数的自旋重试。
+   - 使用 `SendSync`，仅在 Broker 确认接收后才向业务返回成功。
+   - 发送失败时立即回滚 Redis 预扣并返回错误，保证“未投递成功就不占用资格”。
 2. **消息队列（Broker）存储不丢失**：
-   - 为 Topic 设置多个 Partition，并配置多个副本（Replication Factor > 1）。即使某个 Broker 节点宕机，Follower 也能迅速切换为 Leader，保证数据不丢。
+   - 使用 RocketMQ 集群部署（NameServer + Broker），通过 Broker 持久化与主从复制保障消息可靠性。
 3. **消费者（Consumer）消费语义说明**：
-   - 当前代码使用 `reader.ReadMessage()`，属于自动提交 offset 的消费方式，实现简单、吞吐较高。
-   - 如果目标是更强的“处理成功后再提交”语义，可升级为 `FetchMessage + CommitMessages` 手动提交，并配合幂等写入。
+   - 当前代码使用 PushConsumer 回调，业务成功返回 `ConsumeSuccess`。
+   - 业务失败返回 `ConsumeRetryLater` 触发重试；坏消息（反序列化失败）记录后跳过，避免毒消息阻塞。
 
 ### 怎么防止消息被重复消费？（幂等性问题）
 
@@ -488,7 +490,7 @@ Go 语言的并发模型非常轻量，开启 Goroutine 成本极低。将重建
 
 ---
 
-### 项目中 Kafka 的生产与消费实现机制（Go 代码示例）
+### 项目中 RocketMQ 的生产与消费实现机制（Go 代码示例）
 
 利用 Go 的协程轻量化特性，我们可以非常优雅地实现消息的投递与异步监听。
 
@@ -502,13 +504,13 @@ orderMsg := VoucherOrderMessage{
 }
 jsonBytes, _ := json.Marshal(orderMsg)
 
-// 异步发送到 Kafka (seckill_topic)
-err := global.KafkaWriter.WriteMessages(ctx, kafka.Message{
-    Key:   []byte(strconv.FormatInt(userId, 10)), // 根据用户ID做 hash 保证发往同一分区
-    Value: jsonBytes,
-})
+msg := primitive.NewMessage(config.GlobalConfig.RocketMQ.Topic, jsonBytes)
+msg.WithKeys([]string{strconv.FormatUint(userId, 10), strconv.FormatInt(orderId, 10)})
+
+// 同步发送到 RocketMQ，成功后立即返回
+_, err := global.RocketMQProducer.SendSync(ctx, msg)
 if err != nil {
-    log.Error("发送 Kafka 消息失败，订单ID: %d", orderId)
+    log.Error("发送 RocketMQ 消息失败，订单ID: %d", orderId)
     return Result.Fail("抢购失败，系统繁忙")
 }
 
@@ -521,28 +523,27 @@ return Result.Ok(orderId)
 func StartVoucherOrderConsumer() {
    service := NewVoucherOrderService()
 
-   reader := kafka.NewReader(kafka.ReaderConfig{
-      Brokers: config.GlobalConfig.Kafka.Brokers,
-      GroupID: config.GlobalConfig.Kafka.GroupID,
-      Topic:   config.GlobalConfig.Kafka.Topic,
-   })
-   defer reader.Close()
+   _ = global.RocketMQConsumer.Subscribe(
+      config.GlobalConfig.RocketMQ.Topic,
+      consumer.MessageSelector{Type: consumer.TAG, Expression: "*"},
+      func(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+         for _, msg := range msgs {
+            var order entity.VoucherOrder
+            if err := json.Unmarshal(msg.Body, &order); err != nil {
+               global.Logger.Error("消息反序列化失败: " + err.Error())
+               return consumer.ConsumeSuccess, nil
+            }
 
-   for {
-      msg, err := reader.ReadMessage(context.Background()) // 当前实现：自动提交 offset
-      if err != nil {
-         global.Logger.Error("读取 Kafka 消息失败: " + err.Error())
-         continue
-      }
+            if err := service.handleVoucherOrder(&order); err != nil {
+               global.Logger.Error("处理订单失败: " + err.Error())
+               return consumer.ConsumeRetryLater, nil
+            }
+         }
+         return consumer.ConsumeSuccess, nil
+      },
+   )
 
-      var order entity.VoucherOrder
-      if err := json.Unmarshal(msg.Value, &order); err != nil {
-         global.Logger.Error("消息反序列化失败: " + err.Error())
-         continue
-      }
-
-      service.handleVoucherOrder(&order)
-   }
+   _ = global.RocketMQConsumer.Start()
 }
 ```
 ### 社交功能：点赞、关注与共同关注
@@ -600,4 +601,3 @@ func StartVoucherOrderConsumer() {
 * **极简调用**：
   * **添加访客**：`PFADD key userID` (Go: `rdb.PFAdd()`)
   * **获取 UV 数**：`PFCOUNT key` (Go: `rdb.PFCount()`)
-
