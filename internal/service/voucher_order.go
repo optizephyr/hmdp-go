@@ -274,10 +274,6 @@ func (vos *VoucherOrderService) SeckillVoucherByRedisAndRocketMQ(c context.Conte
 	return dto.OkWithData(orderId)
 }
 
-func (vos *VoucherOrderService) SeckillVoucherByRedisAndKafka(c context.Context, voucherId uint64) *dto.Result {
-	return vos.SeckillVoucherByRedisAndRocketMQ(c, voucherId)
-}
-
 // SeckillVoucherByRedis 基于redis和lua脚本的异步秒杀抢券
 // 优化思路 同步变异步 同步是先判断库存 然后一人一单 然后完成数据库写入 然后返回
 // 改为异步 用redis完成库存余量 一人一单判断，完成抢单业务 直接返回
