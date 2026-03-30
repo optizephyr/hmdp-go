@@ -52,10 +52,7 @@ go mod tidy
 - Redis: `127.0.0.1:6379`
 - RocketMQ NameServer: `127.0.0.1:9876`
 
-并提前创建数据库与 Topic：
-
-- MySQL 数据库：`hmdp`，建表脚本`hmdp.sql`已提供。
-- RocketMQ Topic：`voucher-order-topic`
+数据库会在首次启动时自动导入；RocketMQ Topic 由 compose 初始化容器自动创建。
 
 ### 使用 Docker 启动本地依赖（MySQL/Redis/RocketMQ）
 
