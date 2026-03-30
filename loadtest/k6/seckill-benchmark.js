@@ -5,12 +5,13 @@ import {
   buildSeckillScenario,
   limitTokenPool,
   parsePositiveInt,
-  pickTokenForVu,
+  pickTokenForRequest,
 } from './seckill-config.mjs';
 
 const baseUrl = __ENV.BASE_URL || 'http://127.0.0.1:8081';
-const benchmarkUsers = parsePositiveInt(__ENV.K6_USERS, 1000);
-const tokenCount = parsePositiveInt(__ENV.K6_TOKEN_COUNT, benchmarkUsers);
+const benchmarkQps = parsePositiveInt(__ENV.K6_QPS, 1000);
+const benchmarkDuration = __ENV.K6_DURATION || '1m';
+const tokenCount = parsePositiveInt(__ENV.K6_TOKEN_COUNT, benchmarkQps);
 const rawTokens = open('./data/token-users.csv');
 const fixtureVoucher = JSON.parse(open('./data/fixture-voucher.json'));
 
@@ -48,7 +49,7 @@ if (!fixtureVoucher || !fixtureVoucher.voucherId) {
 export const options = {
   scenarios: {
     seckill: {
-      ...buildSeckillScenario(benchmarkUsers),
+      ...buildSeckillScenario(benchmarkQps, benchmarkDuration),
     },
   },
   thresholds: {
@@ -58,7 +59,7 @@ export const options = {
 };
 
 export default function () {
-  const tokenEntry = pickTokenForVu(selectedTokens, __VU);
+  const tokenEntry = pickTokenForRequest(selectedTokens, __VU, __ITER);
   const headers = {
     authorization: tokenEntry.token,
   };

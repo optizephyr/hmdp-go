@@ -7,12 +7,14 @@ export function parsePositiveInt(rawValue, fallback) {
   return parsed;
 }
 
-export function buildSeckillScenario(vus) {
+export function buildSeckillScenario(rate, duration = '1m') {
   return {
-    executor: 'per-vu-iterations',
-    vus,
-    iterations: 1,
-    maxDuration: '30m',
+    executor: 'constant-arrival-rate',
+    rate,
+    timeUnit: '1s',
+    duration,
+    preAllocatedVUs: rate,
+    maxVUs: rate * 2,
     gracefulStop: '0s',
   };
 }
@@ -37,6 +39,19 @@ export function pickTokenForVu(pool, vu) {
   const index = vu - 1;
   if (index < 0 || index >= pool.length) {
     throw new Error(`VU ${vu} is outside the token pool of size ${pool.length}`);
+  }
+
+  return pool[index];
+}
+
+export function pickTokenForRequest(pool, vu, iter) {
+  if (!Array.isArray(pool)) {
+    throw new TypeError('token pool must be an array');
+  }
+
+  const index = (vu - 1 + iter) % pool.length;
+  if (index < 0 || index >= pool.length) {
+    throw new Error(`request index ${index} is outside the token pool of size ${pool.length}`);
   }
 
   return pool[index];
