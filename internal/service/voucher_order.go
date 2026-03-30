@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -55,6 +56,8 @@ var voucherOrderConsumerCancel context.CancelFunc
 var stopVoucherOrderConsumerOnce sync.Once
 var startVoucherOrderConsumerOnce sync.Once
 var startVoucherOrderTaskOnce sync.Once
+
+const disableRocketMQSendEnv = "K6_DISABLE_ROCKETMQ_SEND"
 
 // StopVoucherOrderConsumer 停止 RocketMQ 订单消费者，用于应用优雅关闭。
 func StopVoucherOrderConsumer() {
@@ -255,6 +258,9 @@ func (vos *VoucherOrderService) SeckillVoucherByRedisAndRocketMQ(c context.Conte
 		rollbackReservationFn(c, voucherId, userId)
 		return dto.Fail("消息序列化失败")
 	}
+	if shouldSkipRocketMQSend() {
+		return dto.OkWithData(orderId)
+	}
 
 	// 3. 将订单发送到 RocketMQ
 	msg := primitive.NewMessage(config.GlobalConfig.RocketMQ.Topic, orderBytes)
@@ -278,6 +284,10 @@ func (vos *VoucherOrderService) SeckillVoucherByRedisAndRocketMQ(c context.Conte
 
 	// 4. 返回订单号给前端
 	return dto.OkWithData(orderId)
+}
+
+func shouldSkipRocketMQSend() bool {
+	return os.Getenv(disableRocketMQSendEnv) == "1"
 }
 
 // SeckillVoucherByRedis 基于redis和lua脚本的异步秒杀抢券

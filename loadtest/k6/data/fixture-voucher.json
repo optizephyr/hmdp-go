@@ -1,0 +1,7 @@
+{
+  "voucherId": 1,
+  "stock": 100,
+  "shopId": 1,
+  "seckillPath": "/voucher-order/seckill/:id",
+  "notes": "Fixture voucher aligned with tb_voucher id 1 and tb_seckill_voucher baseline stock 100."
+}

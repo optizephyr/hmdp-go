@@ -245,3 +245,33 @@ func TestSeckillVoucherByRedisAndRocketMQ_ReturnsOrderIDWhenSendSucceeds(t *test
 		t.Fatalf("expected stock to be reserved once, got %d", stock)
 	}
 }
+
+func TestSeckillVoucherByRedisAndRocketMQ_SkipsRocketMQWhenDisabled(t *testing.T) {
+	const (
+		userID    = uint64(10003)
+		voucherID = uint64(20003)
+	)
+
+	prepareVoucherOrderSeckillState(t, voucherID, 1)
+	t.Setenv("K6_DISABLE_ROCKETMQ_SEND", "1")
+
+	oldProducer := voucherOrderProducer
+	t.Cleanup(func() {
+		voucherOrderProducer = oldProducer
+	})
+	voucherOrderProducer = &testVoucherOrderProducer{
+		sendFn: func(ctx context.Context, msgs ...*primitive.Message) (*primitive.SendResult, error) {
+			t.Fatal("SendSync should not be called when RocketMQ is disabled")
+			return nil, nil
+		},
+	}
+
+	result := NewVoucherOrderService().SeckillVoucherByRedisAndRocketMQ(testVoucherOrderContext(userID), voucherID)
+
+	if !result.Success {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if _, ok := result.Data.(int64); !ok {
+		t.Fatalf("expected int64 order id, got %T", result.Data)
+	}
+}

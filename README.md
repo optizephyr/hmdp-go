@@ -117,6 +117,23 @@ docker compose ps
 curl http://localhost:8080/shop-type/list
 ```
 
+### k6 高并发压测
+
+压测脚本位于 `loadtest/k6/`，当前收敛为两个主场景：
+
+- `read-benchmark.js`：商户详情纯读高并发测试。
+- `seckill-benchmark.js`：秒杀同刻高并发测试，同时验证不超卖和一人一单。
+
+准备步骤：
+
+```bash
+bash loadtest/k6/run-seckill-benchmark.sh
+```
+
+运行时默认直连 Go 后端 `http://127.0.0.1:8081`。如需改地址，可通过 `BASE_URL` 覆盖。
+
+如果需要自定义容器名或券 ID，可设置 `MYSQL_CONTAINER`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DB`、`K6_VOUCHER_ID`。
+
 停止 Nginx：
 
 ```bash
