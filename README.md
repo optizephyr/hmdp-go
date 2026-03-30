@@ -129,7 +129,10 @@ bash loadtest/k6/run-seckill-benchmark.sh
 
 运行时默认直连 Go 后端 `http://127.0.0.1:8081`。如需改地址，可通过 `BASE_URL` 覆盖。
 
-如果需要自定义容器名、券 ID 或压测参数，可设置 `MYSQL_CONTAINER`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DB`、`K6_VOUCHER_ID`、`K6_QPS`、`K6_STOCK`、`K6_DURATION`、`K6_TOKEN_COUNT`。
+脚本会在压测前自动执行测试 SQL，并把 Redis 的 `seckill:stock:<voucherId>` 预热成对应库存值。
+如果你的 shell 里曾经导出过 `K6_VUS`、`K6_ITERATIONS` 或 `K6_STAGES`，脚本会先清掉这些覆写，避免 k6 退回默认 1 VU 模式。
+
+如果需要自定义容器名、券 ID 或压测参数，可设置 `MYSQL_CONTAINER`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DB`、`K6_VOUCHER_ID`、`K6_QPS`、`K6_STOCK`、`K6_DURATION`、`K6_TOKEN_COUNT`；脚本内部会把它们转换成 `BENCHMARK_*` 变量传给 k6。
 
 停止 Nginx：
 

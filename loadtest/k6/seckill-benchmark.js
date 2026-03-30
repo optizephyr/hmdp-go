@@ -9,9 +9,9 @@ import {
 } from './seckill-config.mjs';
 
 const baseUrl = __ENV.BASE_URL || 'http://127.0.0.1:8081';
-const benchmarkQps = parsePositiveInt(__ENV.K6_QPS, 1000);
-const benchmarkDuration = __ENV.K6_DURATION || '1m';
-const tokenCount = parsePositiveInt(__ENV.K6_TOKEN_COUNT, benchmarkQps);
+const benchmarkQps = parsePositiveInt(__ENV.BENCHMARK_QPS, 1000);
+const benchmarkDuration = __ENV.BENCHMARK_DURATION || '1m';
+const tokenCount = parsePositiveInt(__ENV.BENCHMARK_TOKEN_COUNT, benchmarkQps);
 const rawTokens = open('./data/token-users.csv');
 const fixtureVoucher = JSON.parse(open('./data/fixture-voucher.json'));
 
@@ -49,6 +49,7 @@ if (!fixtureVoucher || !fixtureVoucher.voucherId) {
 export const options = {
   scenarios: {
     seckill: {
+      exec: 'seckill',
       ...buildSeckillScenario(benchmarkQps, benchmarkDuration),
     },
   },
@@ -58,7 +59,7 @@ export const options = {
   },
 };
 
-export default function () {
+export function seckill() {
   const tokenEntry = pickTokenForRequest(selectedTokens, __VU, __ITER);
   const headers = {
     authorization: tokenEntry.token,

@@ -2,7 +2,7 @@
 -- Pass `@fixture_voucher_id` and `@fixture_stock` with mysql --init-command when needed.
 
 SET @fixture_voucher_id = COALESCE(@fixture_voucher_id, 1);
-SET @fixture_stock = COALESCE(@fixture_stock, 100);
+SET @fixture_stock = COALESCE(@fixture_stock, 200);
 
 START TRANSACTION;
 

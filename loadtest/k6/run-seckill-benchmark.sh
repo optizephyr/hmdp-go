@@ -27,20 +27,27 @@ done
 
 printf '\n=== seckill benchmark: %s qps / %s stock ===\n' "$K6_QPS" "$K6_STOCK"
 
+printf 'preparing token data...\n'
+
 (
   cd "$REPO_ROOT"
   K6_TOKEN_COUNT="$K6_TOKEN_COUNT" go test -tags k6data ./internal/test -run TestGenerate1000Tokens -v
 )
 
+printf 'resetting mysql baseline...\n'
 docker exec -e MYSQL_PWD="$MYSQL_PASSWORD" -i "$MYSQL_CONTAINER" "$MYSQL_BIN" \
   -u "$MYSQL_USER" \
   -D "$MYSQL_DB" \
   --init-command="SET @fixture_voucher_id=${VOUCHER_ID}; SET @fixture_stock=${K6_STOCK};" \
   < "$REPO_ROOT/loadtest/k6/reset-seckill-baseline.sql"
 
+printf 'syncing redis stock...\n'
 docker exec -i "$REDIS_CONTAINER" redis-cli SET "seckill:stock:${VOUCHER_ID}" "$K6_STOCK"
 
+printf 'running k6 benchmark...\n'
 (
   cd "$REPO_ROOT"
-  K6_QPS="$K6_QPS" K6_DURATION="$K6_DURATION" K6_TOKEN_COUNT="$K6_TOKEN_COUNT" BASE_URL="$BASE_URL" k6 run loadtest/k6/seckill-benchmark.js
+env -u K6_VUS -u K6_ITERATIONS -u K6_STAGES \
+    BENCHMARK_QPS="$K6_QPS" BENCHMARK_DURATION="$K6_DURATION" BENCHMARK_TOKEN_COUNT="$K6_TOKEN_COUNT" BASE_URL="$BASE_URL" \
+    k6 run loadtest/k6/seckill-benchmark.js
 )
