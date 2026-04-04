@@ -50,6 +50,15 @@ func (ss *ShopService) QueryShopById(c context.Context, id uint64) *dto.Result {
 
 }
 
+// QueryShopByIdDirectDB A/B 压测基线：直接查询数据库，不经过缓存。
+func (ss *ShopService) QueryShopByIdDirectDB(c context.Context, id uint64) *dto.Result {
+	shop, err := ss.ShopRepository.QueryShopById(c, id)
+	if err != nil {
+		return dto.Fail("店铺不存在或查询失败！")
+	}
+	return dto.OkWithData(shop)
+}
+
 func (ss *ShopService) UpdateShop(c context.Context, shop *entity.Shop) error {
 	id := shop.ID
 	if id == 0 {

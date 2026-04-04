@@ -126,6 +126,10 @@ func SetupRouter() *gin.Engine {
 		shopGroup.GET("/of/type", shopHandler.QueryShopByType)
 		shopGroup.GET("/of/name", shopHandler.QueryShopByName)
 	}
+	shopAbTestGroup := r.Group("/shop-abtest")
+	{
+		shopAbTestGroup.GET("/direct-db/:id", shopHandler.QueryShopByIdDirectDB)
+	}
 
 	// 秒杀券相关路由
 	voucherHandler := handler.NewVoucherHandler()
@@ -139,6 +143,10 @@ func SetupRouter() *gin.Engine {
 	voucherOrderGroup := r.Group("/voucher-order").Use(middleware.LoginInterceptor())
 	{
 		voucherOrderGroup.POST("/seckill/:id", voucherOrderHandler.SeckillVoucher)
+	}
+	voucherOrderAbTestGroup := r.Group("/voucher-order-abtest").Use(middleware.LoginInterceptor())
+	{
+		voucherOrderAbTestGroup.POST("/tx/:id", voucherOrderHandler.SeckillVoucherTxBaseline)
 	}
 
 	// blog

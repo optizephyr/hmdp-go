@@ -28,3 +28,12 @@ func (vor *VoucherOrderRepository) CountVoucherOrderByUserIdAndVoucherId(c conte
 	}
 	return count, nil
 }
+
+func (vor *VoucherOrderRepository) CountVoucherOrderByUserIdAndVoucherIdWithTx(tx *gorm.DB, userId uint64, voucherId uint64) (int64, error) {
+	var count int64
+	err := tx.Model(&entity.VoucherOrder{}).Where("user_id = ? AND voucher_id = ?", userId, voucherId).Count(&count).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, err
+	}
+	return count, nil
+}

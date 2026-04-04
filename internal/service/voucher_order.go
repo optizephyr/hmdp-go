@@ -290,6 +290,64 @@ func shouldSkipRocketMQSend() bool {
 	return os.Getenv(disableRocketMQSendEnv) == "1"
 }
 
+// SeckillVoucherByTxBaseline A/B 压测基线：在单个数据库事务中完成校验库存、扣减库存、创建订单。
+func (vos *VoucherOrderService) SeckillVoucherByTxBaseline(c context.Context, voucherId uint64) *dto.Result {
+	userId := util.GetUserId(c)
+	if userId == 0 {
+		return dto.Fail("请先登录！")
+	}
+
+	orderId, err := util.NextId(c, global.RedisClient, constant.OrderIdPrefix)
+	if err != nil {
+		return dto.Fail(err.Error())
+	}
+
+	order := &entity.VoucherOrder{
+		ID:        orderId,
+		UserID:    userId,
+		VoucherID: voucherId,
+	}
+
+	err = global.Db.WithContext(c).Transaction(func(tx *gorm.DB) error {
+		voucher, err := vos.SeckillVoucherService.SeckillVoucherRepository.QuerySeckillVoucherById(tx.Statement.Context, voucherId)
+		if err != nil {
+			return err
+		}
+
+		now := time.Now()
+		if voucher.BeginTime.After(now) {
+			return fmt.Errorf("秒杀尚未开始！")
+		}
+		if voucher.EndTime.Before(now) {
+			return fmt.Errorf("秒杀已经结束！")
+		}
+
+		orderCount, err := vos.VoucherOrderRepository.CountVoucherOrderByUserIdAndVoucherIdWithTx(tx, userId, voucherId)
+		if err != nil {
+			return err
+		}
+		if orderCount > 0 {
+			return fmt.Errorf("用户已经购买过一次！")
+		}
+
+		if err := vos.SeckillVoucherService.SeckillVoucherRepository.DeductStock(tx, voucherId); err != nil {
+			return err
+		}
+
+		if err := vos.VoucherOrderRepository.CreateVoucherOrder(tx, order); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return dto.Fail(err.Error())
+	}
+
+	return dto.OkWithData(orderId)
+}
+
 // SeckillVoucherByRedis 基于redis和lua脚本的异步秒杀抢券
 // 优化思路 同步变异步 同步是先判断库存 然后一人一单 然后完成数据库写入 然后返回
 // 改为异步 用redis完成库存余量 一人一单判断，完成抢单业务 直接返回

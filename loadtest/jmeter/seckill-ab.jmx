@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Seckill AB Benchmark" enabled="true">
+      <stringProp name="TestPlan.comments">Parameterized single-scenario seckill benchmark. Runner script executes A then B with staged users.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">true</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="base_protocol" elementType="Argument">
+            <stringProp name="Argument.name">base_protocol</stringProp>
+            <stringProp name="Argument.value">${__P(base_protocol,http)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="base_host" elementType="Argument">
+            <stringProp name="Argument.name">base_host</stringProp>
+            <stringProp name="Argument.value">${__P(base_host,127.0.0.1)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="base_port" elementType="Argument">
+            <stringProp name="Argument.name">base_port</stringProp>
+            <stringProp name="Argument.value">${__P(base_port,8081)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="target_path" elementType="Argument">
+            <stringProp name="Argument.name">target_path</stringProp>
+            <stringProp name="Argument.value">${__P(target_path,/voucher-order/seckill/)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="voucher_id" elementType="Argument">
+            <stringProp name="Argument.name">voucher_id</stringProp>
+            <stringProp name="Argument.value">${__P(voucher_id,1)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="users" elementType="Argument">
+            <stringProp name="Argument.name">users</stringProp>
+            <stringProp name="Argument.value">${__P(users,100)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="ramp_up" elementType="Argument">
+            <stringProp name="Argument.name">ramp_up</stringProp>
+            <stringProp name="Argument.value">${__P(ramp_up,60)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="hold_seconds" elementType="Argument">
+            <stringProp name="Argument.name">hold_seconds</stringProp>
+            <stringProp name="Argument.value">${__P(hold_seconds,180)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="cooldown_seconds" elementType="Argument">
+            <stringProp name="Argument.name">cooldown_seconds</stringProp>
+            <stringProp name="Argument.value">${__P(cooldown_seconds,30)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="token_csv" elementType="Argument">
+            <stringProp name="Argument.name">token_csv</stringProp>
+            <stringProp name="Argument.value">${__P(token_csv,loadtest/k6/data/token-users.csv)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+    </TestPlan>
+    <hashTree>
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Token CSV" enabled="true">
+        <stringProp name="delimiter">,</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="filename">${token_csv}</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="variableNames">userId,token</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Seckill Scenario" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${users}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${ramp_up}</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.duration">${__groovy(${hold_seconds}+${cooldown_seconds})}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Auth Header" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="Authorization" elementType="Header">
+              <stringProp name="Header.name">authorization</stringProp>
+              <stringProp name="Header.value">${token}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST seckill" enabled="true">
+          <stringProp name="HTTPSampler.domain">${base_host}</stringProp>
+          <stringProp name="HTTPSampler.port">${base_port}</stringProp>
+          <stringProp name="HTTPSampler.protocol">${base_protocol}</stringProp>
+          <stringProp name="HTTPSampler.path">${target_path}${voucher_id}</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="HTTP 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="code">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Expected status 200</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

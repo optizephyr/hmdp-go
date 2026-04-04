@@ -32,6 +32,18 @@ func (sh *ShopHandler) QueryShopById(c *gin.Context) {
 	}
 }
 
+// QueryShopByIdDirectDB A/B 压测基线：直接查询 MySQL，不走缓存。
+func (sh *ShopHandler) QueryShopByIdDirectDB(c *gin.Context) {
+	var req struct {
+		ShopId uint64 `uri:"id"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.Fail("请输入正确的店铺ID！"))
+	} else {
+		c.JSON(http.StatusOK, sh.ShopService.QueryShopByIdDirectDB(c, req.ShopId))
+	}
+}
+
 func (sh *ShopHandler) SaveShop(c *gin.Context) {
 	var shop entity.Shop
 	if err := c.ShouldBindJSON(&shop); err != nil {
