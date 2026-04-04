@@ -143,6 +143,15 @@ docker compose stop nginx
 
 > 注意：确保 Go 后端已启动，否则返回 502 Bad Gateway。
 
+### JMeter A/B 压测
+
+JMeter 压测资产位于 `loadtest/jmeter/`，包含高并发读与秒杀写场景的顺序 A/B 测试脚本。
+
+- 读场景：A=`/shop-abtest/direct-db/:id`，B=`/shop/:id`
+- 写场景：A=`/voucher-order-abtest/tx/:id`，B=`/voucher-order/seckill/:id`
+
+详细执行与参数说明见：`loadtest/jmeter/README.md`
+
 ### 4. 修改配置
 
 编辑 `config/config.yaml`，重点检查以下字段：
