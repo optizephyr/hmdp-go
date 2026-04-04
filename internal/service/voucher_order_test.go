@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/amemiya02/hmdp-go/config"
 	"github.com/amemiya02/hmdp-go/internal/constant"
@@ -273,5 +274,64 @@ func TestSeckillVoucherByRedisAndRocketMQ_SkipsRocketMQWhenDisabled(t *testing.T
 	}
 	if _, ok := result.Data.(int64); !ok {
 		t.Fatalf("expected int64 order id, got %T", result.Data)
+	}
+}
+
+func TestHandleVoucherOrderPersistsOrderAndDeductsStock(t *testing.T) {
+	ctx := context.Background()
+	service := NewVoucherOrderService()
+
+	const (
+		userID    = uint64(20001)
+		voucherID = uint64(30001)
+		orderID   = int64(3000100001)
+	)
+
+	if err := global.Db.WithContext(ctx).Where("voucher_id = ?", voucherID).Delete(&entity.SeckillVoucher{}).Error; err != nil {
+		t.Fatalf("cleanup seckill voucher failed: %v", err)
+	}
+	if err := global.Db.WithContext(ctx).Where("id = ?", orderID).Delete(&entity.VoucherOrder{}).Error; err != nil {
+		t.Fatalf("cleanup voucher order failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = global.Db.WithContext(ctx).Where("voucher_id = ?", voucherID).Delete(&entity.SeckillVoucher{}).Error
+		_ = global.Db.WithContext(ctx).Where("id = ?", orderID).Delete(&entity.VoucherOrder{}).Error
+	})
+
+	now := time.Now()
+	if err := global.Db.WithContext(ctx).Create(&entity.SeckillVoucher{
+		VoucherID:  voucherID,
+		Stock:      1,
+		BeginTime:  now.Add(-time.Hour),
+		EndTime:    now.Add(time.Hour),
+		UpdateTime: now,
+	}).Error; err != nil {
+		t.Fatalf("prepare seckill voucher failed: %v", err)
+	}
+
+	order := &entity.VoucherOrder{
+		ID:        orderID,
+		UserID:    userID,
+		VoucherID: voucherID,
+	}
+
+	if err := service.handleVoucherOrder(order); err != nil {
+		t.Fatalf("handleVoucherOrder failed: %v", err)
+	}
+
+	var orderCount int64
+	if err := global.Db.WithContext(ctx).Model(&entity.VoucherOrder{}).Where("id = ?", orderID).Count(&orderCount).Error; err != nil {
+		t.Fatalf("count inserted order failed: %v", err)
+	}
+	if orderCount != 1 {
+		t.Fatalf("expected 1 inserted order, got %d", orderCount)
+	}
+
+	var stock int
+	if err := global.Db.WithContext(ctx).Model(&entity.SeckillVoucher{}).Select("stock").Where("voucher_id = ?", voucherID).Scan(&stock).Error; err != nil {
+		t.Fatalf("read stock failed: %v", err)
+	}
+	if stock != 0 {
+		t.Fatalf("expected stock to be deducted to 0, got %d", stock)
 	}
 }

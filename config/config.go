@@ -1,8 +1,10 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/spf13/viper"
@@ -77,5 +79,43 @@ func init() {
 
 	if err := v.Unmarshal(GlobalConfig); err != nil {
 		panic(err)
+	}
+
+	applyEnvOverrides(GlobalConfig)
+}
+
+func applyEnvOverrides(cfg *Config) {
+	if value := os.Getenv("HMDP_MYSQL_HOST"); value != "" {
+		cfg.MySQL.Host = value
+	}
+	if value := os.Getenv("HMDP_MYSQL_PORT"); value != "" {
+		cfg.MySQL.Port = value
+	}
+	if value := os.Getenv("HMDP_MYSQL_USERNAME"); value != "" {
+		cfg.MySQL.Username = value
+	}
+	if value := os.Getenv("HMDP_MYSQL_PASSWORD"); value != "" {
+		cfg.MySQL.Password = value
+	}
+	if value := os.Getenv("HMDP_MYSQL_DBNAME"); value != "" {
+		cfg.MySQL.DbName = value
+	}
+	if value := os.Getenv("HMDP_MYSQL_CHARSET"); value != "" {
+		cfg.MySQL.Charset = value
+	}
+
+	if value := os.Getenv("HMDP_REDIS_HOST"); value != "" {
+		cfg.Redis.Host = value
+	}
+	if value := os.Getenv("HMDP_REDIS_PORT"); value != "" {
+		cfg.Redis.Port = value
+	}
+	if value := os.Getenv("HMDP_REDIS_PASSWORD"); value != "" {
+		cfg.Redis.Password = value
+	}
+	if value := os.Getenv("HMDP_REDIS_DB"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			cfg.Redis.Db = parsed
+		}
 	}
 }

@@ -124,15 +124,16 @@ curl http://localhost:8080/shop-type/list
 准备步骤：
 
 ```bash
-bash loadtest/k6/run-seckill-benchmark.sh
+bash loadtest/k6/run-seckill-benchmark.sh --qps 1000 --stock 1000
 ```
 
-运行时默认直连 Go 后端 `http://127.0.0.1:8081`。如需改地址，可通过 `BASE_URL` 覆盖。
+运行时默认直连 Go 后端 `http://127.0.0.1:8081`。如需压远程服务，可以同时设置 `BASE_URL` 和远程 MySQL/Redis 的 `HMDP_*` 环境变量。
 
-脚本会在压测前自动执行测试 SQL，并把 Redis 的 `seckill:stock:<voucherId>` 预热成对应库存值。
+脚本会在压测前自动执行测试 SQL，并把 Redis 的 `seckill:stock:<voucherId>` 预热成对应库存值，同时清空 `seckill:order:<voucherId>`，避免上次压测残留导致全量重复下单。若只想让本地 k6 去打远程服务，可以先在远程机执行 `PREPARE_ONLY=1 bash loadtest/k6/run-seckill-benchmark.sh`，再在本地传 `SKIP_PREPARE=1 SKIP_VERIFY=1`。
 如果你的 shell 里曾经导出过 `K6_VUS`、`K6_ITERATIONS` 或 `K6_STAGES`，脚本会先清掉这些覆写，避免 k6 退回默认 1 VU 模式。
+压测结束后，脚本会自动校验 Redis 剩余库存、MySQL 订单数、k6 成功下单数，以及是否存在同一用户对同一券的重复下单。
 
-如果需要自定义容器名、券 ID 或压测参数，可设置 `MYSQL_CONTAINER`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DB`、`K6_VOUCHER_ID`、`K6_QPS`、`K6_STOCK`、`K6_DURATION`、`K6_TOKEN_COUNT`；脚本内部会把它们转换成 `BENCHMARK_*` 变量传给 k6。
+如果需要自定义券 ID 或压测参数，可以通过命令行参数传入：`--qps`、`--stock`、`--duration`、`--token-count`、`--voucher-id`、`--base-url`，也可以用 `SKIP_PREPARE` / `SKIP_VERIFY` 控制流程。
 
 停止 Nginx：
 
