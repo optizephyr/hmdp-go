@@ -22,6 +22,16 @@ redis:
   db: 0
   timeout: 5000  # 超时时间(ms)
 
+# BigCache 配置
+bigcache:
+  shards: 1024
+  life_window: "45s"
+  clean_window: "10s"
+  max_entries_in_window: 5000
+  max_entry_size: 512
+  hard_max_cache_size: 64
+  verbose: false
+
 rocketmq:
   name_servers:
     - "127.0.0.1:9876"

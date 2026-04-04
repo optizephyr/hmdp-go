@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/allegro/bigcache/v3"
 	"github.com/amemiya02/hmdp-go/internal/constant"
 	"github.com/amemiya02/hmdp-go/internal/global"
 	"github.com/amemiya02/hmdp-go/internal/model/dto"
@@ -21,6 +23,44 @@ type ShopService struct {
 	ShopRepository *repository.ShopRepository
 }
 
+var queryShopByIDL1Get = func(key string) (*entity.Shop, error) {
+	if global.BigCacheClient == nil {
+		return nil, nil
+	}
+
+	data, err := global.BigCacheClient.Get(key)
+	if err != nil {
+		if errors.Is(err, bigcache.ErrEntryNotFound) {
+			return nil, nil
+		}
+		return nil, nil
+	}
+
+	shop := new(entity.Shop)
+	if err := json.Unmarshal(data, shop); err != nil {
+		return nil, nil
+	}
+
+	return shop, nil
+}
+
+var queryShopByIDL1Set = func(key string, shop *entity.Shop) {
+	if global.BigCacheClient == nil || shop == nil {
+		return
+	}
+
+	data, err := json.Marshal(shop)
+	if err != nil {
+		return
+	}
+
+	_ = global.BigCacheClient.Set(key, data)
+}
+
+var queryShopByIDRemote = func(ctx context.Context, key string, lockKey string, ttl time.Duration, fallback func() (*entity.Shop, error)) (*entity.Shop, error) {
+	return util.QueryWithMutex(ctx, global.RedisClient, key, lockKey, ttl, fallback)
+}
+
 func NewShopService() *ShopService {
 	return &ShopService{
 		ShopRepository: repository.NewShopRepository(),
@@ -30,6 +70,9 @@ func NewShopService() *ShopService {
 func (ss *ShopService) QueryShopById(c context.Context, id uint64) *dto.Result {
 	// 解决缓存穿透
 	key := constant.CacheShopKey + strconv.FormatUint(id, 10)
+	if l1Shop, err := queryShopByIDL1Get(key); err == nil && l1Shop != nil {
+		return dto.OkWithData(l1Shop)
+	}
 
 	fallback := func() (*entity.Shop, error) {
 		return ss.ShopRepository.QueryShopById(c, id)
@@ -38,13 +81,16 @@ func (ss *ShopService) QueryShopById(c context.Context, id uint64) *dto.Result {
 
 	// 用互斥锁防击穿：
 	lockKey := constant.LockShopKey + strconv.FormatUint(id, 10)
-	shop, err := util.QueryWithMutex(c, global.RedisClient, key, lockKey, constant.CacheShopTTL*time.Minute, fallback)
+	shop, err := queryShopByIDRemote(c, key, lockKey, constant.CacheShopTTL*time.Minute, fallback)
 
 	// 用缓存预热+逻辑过期：
 	// shop, err := util.QueryWithLogicalExpire(c, global.RedisClient, key, lockKey, constant.CacheShopTTL*time.Minute, fallback)
 
 	if err != nil {
 		return dto.Fail("店铺不存在或查询失败！")
+	}
+	if shop != nil {
+		queryShopByIDL1Set(key, shop)
 	}
 	return dto.OkWithData(shop)
 
