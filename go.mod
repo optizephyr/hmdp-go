@@ -4,6 +4,7 @@ go 1.25.6
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/apache/rocketmq-client-go/v2 v2.1.2
 	github.com/bsm/redislock v0.9.4
 	github.com/gin-contrib/cors v1.7.6

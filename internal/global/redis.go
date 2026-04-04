@@ -2,6 +2,8 @@ package global
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	"github.com/amemiya02/hmdp-go/config"
 	"github.com/redis/go-redis/v9"
@@ -11,6 +13,10 @@ var RedisClient *redis.Client
 
 // 初始化redis客户端
 func init() {
+	if os.Getenv("HMDP_SKIP_REDIS_INIT") == "1" {
+		return
+	}
+
 	cfg := config.GlobalConfig.Redis
 	RedisClient = redis.NewClient(&redis.Options{
 		Addr:     joinHostPort(cfg.Host, cfg.Port),
@@ -24,4 +30,11 @@ func init() {
 	}
 
 	Logger.Info("Connected to Redis...")
+}
+
+func joinHostPort(host, port string) string {
+	if strings.HasPrefix(port, ":") {
+		return host + port
+	}
+	return host + ":" + port
 }

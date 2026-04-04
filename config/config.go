@@ -15,6 +15,7 @@ type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	MySQL    MySQLConfig    `mapstructure:"mysql"`
 	Redis    RedisConfig    `mapstructure:"redis"`
+	BigCache BigCacheConfig `mapstructure:"bigcache"`
 	RocketMQ RocketMQConfig `mapstructure:"rocketmq"`
 }
 
@@ -43,6 +44,17 @@ type RedisConfig struct {
 	Password string        `mapstructure:"password"`
 	Db       int           `mapstructure:"db"`
 	Timeout  time.Duration `mapstructure:"timeout"`
+}
+
+// BigCacheConfig BigCache配置
+type BigCacheConfig struct {
+	Shards             int           `mapstructure:"shards"`
+	LifeWindow         time.Duration `mapstructure:"life_window"`
+	CleanWindow        time.Duration `mapstructure:"clean_window"`
+	MaxEntriesInWindow int           `mapstructure:"max_entries_in_window"`
+	MaxEntrySize       int           `mapstructure:"max_entry_size"`
+	HardMaxCacheSize   int           `mapstructure:"hard_max_cache_size"`
+	Verbose            bool          `mapstructure:"verbose"`
 }
 
 // RocketMQConfig RocketMQ配置

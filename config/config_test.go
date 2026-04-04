@@ -9,4 +9,12 @@ func TestConfigHasRocketMQShape(t *testing.T) {
 	_ = cfg.RocketMQ.Topic
 	_ = cfg.RocketMQ.ProducerGroup
 	_ = cfg.RocketMQ.ConsumerGroup
+
+	_ = cfg.BigCache.Shards
+	_ = cfg.BigCache.LifeWindow
+	_ = cfg.BigCache.CleanWindow
+	_ = cfg.BigCache.MaxEntriesInWindow
+	_ = cfg.BigCache.MaxEntrySize
+	_ = cfg.BigCache.HardMaxCacheSize
+	_ = cfg.BigCache.Verbose
 }
