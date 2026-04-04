@@ -95,7 +95,7 @@ services:
         condition: service_healthy
     command: >
       sh -c "cd /home/rocketmq/rocketmq-5.3.2/bin &&
-      until ./mqadmin updateTopic -n rocketmq-namesrv:9876 -c DefaultCluster -t voucher-order-topic -r 4 -w 4; do
+      until ./mqadmin updateTopic -n rocketmq-namesrv:9876 -b rocketmq-broker:10911 -t voucher-order-topic -r 4 -w 4; do
       sleep 5;
       done"
     networks:
@@ -112,7 +112,7 @@ services:
     extra_hosts:
       - "hmdp-api:host-gateway"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
