@@ -3,7 +3,6 @@ package global
 import (
 	"context"
 	"os"
-	"strings"
 
 	"github.com/amemiya02/hmdp-go/config"
 	"github.com/redis/go-redis/v9"
@@ -30,11 +29,4 @@ func init() {
 	}
 
 	Logger.Info("Connected to Redis...")
-}
-
-func joinHostPort(host, port string) string {
-	if strings.HasPrefix(port, ":") {
-		return host + port
-	}
-	return host + ":" + port
 }
