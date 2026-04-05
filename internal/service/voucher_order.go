@@ -297,6 +297,9 @@ func (vos *VoucherOrderService) SeckillVoucherByTxBaseline(c context.Context, vo
 		return dto.Fail("请先登录！")
 	}
 
+	txCtx, cancel := context.WithTimeout(c, 3*time.Second)
+	defer cancel()
+
 	orderId, err := util.NextId(c, global.RedisClient, constant.OrderIdPrefix)
 	if err != nil {
 		return dto.Fail(err.Error())
@@ -308,8 +311,8 @@ func (vos *VoucherOrderService) SeckillVoucherByTxBaseline(c context.Context, vo
 		VoucherID: voucherId,
 	}
 
-	err = global.Db.WithContext(c).Transaction(func(tx *gorm.DB) error {
-		voucher, err := vos.SeckillVoucherService.SeckillVoucherRepository.QuerySeckillVoucherById(tx.Statement.Context, voucherId)
+	err = global.Db.WithContext(txCtx).Transaction(func(tx *gorm.DB) error {
+		voucher, err := vos.SeckillVoucherService.SeckillVoucherRepository.QuerySeckillVoucherByIdWithTx(tx, voucherId)
 		if err != nil {
 			return err
 		}

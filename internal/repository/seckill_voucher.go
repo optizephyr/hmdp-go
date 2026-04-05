@@ -25,6 +25,15 @@ func (svr *SeckillVoucherRepository) QuerySeckillVoucherById(ctx context.Context
 	return &voucher, nil
 }
 
+func (svr *SeckillVoucherRepository) QuerySeckillVoucherByIdWithTx(tx *gorm.DB, id uint64) (*entity.SeckillVoucher, error) {
+	var voucher entity.SeckillVoucher
+	err := tx.Where("voucher_id = ?", id).First(&voucher).Error
+	if err != nil {
+		return nil, err
+	}
+	return &voucher, nil
+}
+
 func (svr *SeckillVoucherRepository) UpdateSeckillVoucher(ctx context.Context, voucher entity.SeckillVoucher) error {
 	return global.Db.WithContext(ctx).Model(&voucher).Select("*").Updates(voucher).Error
 }

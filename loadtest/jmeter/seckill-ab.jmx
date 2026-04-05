@@ -58,6 +58,16 @@
             <stringProp name="Argument.value">${__P(token_csv,loadtest/k6/data/token-users.csv)}</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
+          <elementProp name="connect_timeout_ms" elementType="Argument">
+            <stringProp name="Argument.name">connect_timeout_ms</stringProp>
+            <stringProp name="Argument.value">${__P(connect_timeout_ms,2000)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="response_timeout_ms" elementType="Argument">
+            <stringProp name="Argument.name">response_timeout_ms</stringProp>
+            <stringProp name="Argument.value">${__P(response_timeout_ms,5000)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
         </collectionProp>
       </elementProp>
     </TestPlan>
@@ -102,6 +112,8 @@
           <stringProp name="HTTPSampler.protocol">${base_protocol}</stringProp>
           <stringProp name="HTTPSampler.path">${target_path}${voucher_id}</stringProp>
           <stringProp name="HTTPSampler.method">POST</stringProp>
+          <stringProp name="HTTPSampler.connect_timeout">${connect_timeout_ms}</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">${response_timeout_ms}</stringProp>
           <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
           <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -116,6 +128,16 @@
             <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
             <boolProp name="Assertion.assume_success">false</boolProp>
             <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Business Success" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="success_true">&quot;success&quot;:true</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Expected business success=true payload</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">2</intProp>
           </ResponseAssertion>
           <hashTree/>
         </hashTree>

@@ -114,20 +114,6 @@ func ensureTokenUsers(ctx context.Context, count int) error {
 	return global.Db.WithContext(ctx).CreateInBatches(users, 500).Error
 }
 
-func resolveTokenExportCount() int {
-	raw := os.Getenv("K6_TOKEN_COUNT")
-	if raw == "" {
-		return 1000
-	}
-
-	count, err := strconv.Atoi(raw)
-	if err != nil || count <= 0 {
-		return 1000
-	}
-
-	return count
-}
-
 func resolveTokenExportPath() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
