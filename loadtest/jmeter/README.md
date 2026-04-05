@@ -25,7 +25,7 @@
 - 秒杀场景为保证横向可比性：每个 stage 开始前都会 reset，使 `stage1/stage2/stage3` 都从相同初始库存起跑
 - 每阶段节奏（默认）：`Ramp-up 20s + Hold 60s + Cooldown 10s`
 - 并发阶梯：
-  - 读：`100 -> 300 -> 600 users`
+  - 读：`1000 -> 2000 -> 3000 users`
   - 写：`500 -> 1000 -> 2000 users`
 - 指标口径：重点关注 `QPS`、`Avg RT`、`P95`、`P99`、`Error Rate`
 

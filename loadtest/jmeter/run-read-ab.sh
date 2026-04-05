@@ -45,9 +45,9 @@ run_scenario() {
   local scenario="$1"
   local target_path="$2"
 
-  run_stage "$scenario" "stage1_100" "100" "$target_path"
-  run_stage "$scenario" "stage2_300" "300" "$target_path"
-  run_stage "$scenario" "stage3_600" "600" "$target_path"
+  run_stage "$scenario" "stage1_1000" "1000" "$target_path"
+  run_stage "$scenario" "stage2_2000" "2000" "$target_path"
+  run_stage "$scenario" "stage3_3000" "3000" "$target_path"
 }
 
 if ! command -v jmeter >/dev/null 2>&1; then
