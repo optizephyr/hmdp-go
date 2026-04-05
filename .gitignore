@@ -3,3 +3,5 @@
 .cache/
 .worktrees/
 internal/test/tokens.csv
+jmeter.log
+loadtest/jmeter/out_old/
